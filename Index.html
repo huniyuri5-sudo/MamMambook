@@ -1,1 +1,635 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Firebase Mini SNS · Follow/Following</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0f172a; --card:#111827; --muted:#94a3b8; --ring:#22d3ee;
+      --accent:#38bdf8; --ok:#10b981; --err:#ef4444; --text:#e5e7eb;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#0b1020,#0f172a 30%,#0b1020);
+      font-family:system-ui,Segoe UI,Apple SD Gothic Neo,Pretendard,Arial,sans-serif;color:var(--text)}
+    header{position:sticky;top:0;background:#0b1020aa;backdrop-filter:blur(6px);
+      display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;border-bottom:1px solid #1f2937;z-index:10}
+    header h1{font-size:1.1rem;margin:0}
+    .grow{flex:1}
+    button{background:var(--accent);border:none;color:#00111a;padding:.55rem .9rem;border-radius:10px;cursor:pointer}
+    button.secondary{background:#1f2937;color:#cbd5e1;border:1px solid #334155}
+    button.ghost{background:transparent;border:1px solid #2a3d59;color:#9fb3c8}
+    main{max-width:980px;margin:0 auto;padding:1rem}
+    .card{background:var(--card);border:1px solid #1f2937;border-radius:16px;box-shadow:0 4px 24px #00000030}
+    .composer{padding:1rem;margin-bottom:1rem}
+    textarea{width:100%;min-height:80px;background:#0b1220;color:var(--text);border:1px solid #253049;border-radius:12px;padding:.75rem;resize:vertical}
+    .row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+    .row > *{margin-top:.5rem}
+    input[type="file"]{background:#0b1220;border:1px dashed #334155;color:#9fb3c8;padding:.6rem;border-radius:10px}
+    .grid{display:grid;grid-template-columns:2fr 1fr;gap:1rem}
+    .feed{display:grid;gap:.75rem}
+    .post{padding:1rem}
+    .post .head{display:flex;gap:.75rem;align-items:center}
+    .avatar{width:42px;height:42px;border-radius:50%;background:#0b1220;border:1px solid #2a3d59;object-fit:cover}
+    .name{font-weight:700}
+    .time{color:#9ca3af;font-size:.85rem}
+    .content{white-space:pre-wrap;line-height:1.5;margin:.5rem 0}
+    .imgwrap{border:1px solid #263449;background:#0b1220;border-radius:12px;overflow:hidden}
+    .imgwrap img{width:100%;display:block;max-height:520px;object-fit:cover}
+    .actions{display:flex;gap:.5rem;align-items:center;margin-top:.35rem}
+    .chip{font-size:.9rem;color:#9fb3c8}
+    .like.on{background:var(--ok);color:#04261c}
+    .comment-area{margin-top:.5rem;border-top:1px solid #223046;padding-top:.5rem}
+    .comment{display:flex;gap:.5rem;margin:.4rem 0}
+    .comment .meta{font-size:.85rem;color:#9fb3c8}
+    .comment input{flex:1;background:#0b1220;border:1px solid #253049;border-radius:10px;padding:.5rem;color:var(--text)}
+    .warn{color:#fca5a5}
+    .right{margin-left:auto}
+    .hidden{display:none !important}
+    .sidebar{padding:1rem;position:sticky;top:64px;height:fit-content}
+    .profile{display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem}
+    .profile .counts{display:flex;gap:1rem;font-size:.9rem;color:#cbd5e1}
+    .suggest{margin-top:.75rem}
+    .userrow{display:flex;align-items:center;gap:.6rem;padding:.5rem;border:1px solid #23324a;border-radius:12px;margin-bottom:.5rem}
+    .userrow .avatar{width:36px;height:36px}
+    .tabs{display:flex;gap:.5rem;margin-bottom:.75rem}
+    .tabs button{background:#162235;color:#cbd5e1}
+    .tabs button.active{background:var(--accent);color:#062433}
+    @media (max-width:900px){
+      .grid{grid-template-columns:1fr}
+      .sidebar{position:static}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MamMambook</h1>
+    <div class="grow"></div>
+    <img id="userPhoto" class="avatar hidden" alt="me"/>
+    <span id="userName" class="chip hidden"></span>
+    <button id="loginBtn">Google 로그인</button>
+    <button id="logoutBtn" class="secondary hidden">로그아웃</button>
+  </header>
 
+  <main>
+    <section id="composer" class="card composer hidden">
+      <textarea id="postText" placeholder="무슨 일이 있었나요?"></textarea>
+      <div class="row">
+        <input id="postImage" type="file" accept="image/*" />
+        <button id="publishBtn">게시</button>
+        <span id="composeHint" class="chip"></span>
+        <span id="composeErr" class="chip warn"></span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <!-- LEFT: Feed -->
+      <section>
+        <!-- Feed tabs -->
+        <div class="tabs">
+          <button id="tabAll" class="secondary active">전체</button>
+          <button id="tabFollowing" class="secondary">팔로잉</button>
+        </div>
+        <section class="feed" id="feed"></section>
+        <p class="chip" id="anonHint">
+          로그인을 해주세요. 글쓰기/좋아요/댓글/팔로우는 로그인 후 이용할 수 있어요.
+        </p>
+      </section>
+
+      <!-- RIGHT: Sidebar -->
+      <aside class="card sidebar">
+        <div class="profile">
+          <img id="mePhoto" class="avatar" alt="" />
+          <div>
+            <div id="meName" class="name">게스트</div>
+            <div class="counts">
+              <span>팔로워 <b id="meFollowers">0</b></span>
+              <span>팔로잉 <b id="meFollowing">0</b></span>
+            </div>
+          </div>
+        </div>
+        <button id="editProfileBtn" class="ghost">내 프로필 갱신</button>
+
+        <div class="suggest">
+          <div class="name" style="margin:.75rem 0 .5rem">팔로우 추천</div>
+          <div id="suggestList"></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+    import {
+      getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut, updateProfile
+    } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+    import {
+      getFirestore, collection, doc, addDoc, setDoc, getDoc, onSnapshot, query, orderBy,
+      serverTimestamp, limit, updateDoc, deleteDoc, runTransaction, where, getDocs
+    } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+    import {
+      getStorage, ref, uploadBytes, getDownloadURL
+    } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js";
+
+    // 1) 교체: 본인 Firebase 설정
+  const firebaseConfig = {
+  apiKey: "AIzaSyCZe6mU-zN_pK1XgdLBXbl9gpiefM1zhT0",
+  authDomain: "omok-d5f24.firebaseapp.com",
+  databaseURL: "https://omok-d5f24-default-rtdb.firebaseio.com",
+  projectId: "omok-d5f24",
+  storageBucket: "omok-d5f24.firebasestorage.app",
+  messagingSenderId: "913272245831",
+  appId: "1:913272245831:web:3ae75841e0e97be832ab62",
+  measurementId: "G-F713FYKGT5"
+};
+    // 2) 초기화
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const storage = getStorage(app);
+
+    // 3) UI 참조
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const userPhoto = document.getElementById('userPhoto');
+    const userName = document.getElementById('userName');
+    const composer = document.getElementById('composer');
+    const anonHint = document.getElementById('anonHint');
+    const postText = document.getElementById('postText');
+    const postImage = document.getElementById('postImage');
+    const publishBtn = document.getElementById('publishBtn');
+    const composeHint = document.getElementById('composeHint');
+    const composeErr = document.getElementById('composeErr');
+    const feed = document.getElementById('feed');
+
+    const mePhoto = document.getElementById('mePhoto');
+    const meName = document.getElementById('meName');
+    const meFollowers = document.getElementById('meFollowers');
+    const meFollowing = document.getElementById('meFollowing');
+    const editProfileBtn = document.getElementById('editProfileBtn');
+    const suggestList = document.getElementById('suggestList');
+
+    const tabAll = document.getElementById('tabAll');
+    const tabFollowing = document.getElementById('tabFollowing');
+
+    // 상태
+    let unsubscribeFeed = null;
+    let currentFeedMode = 'all'; // 'all' | 'following'
+    let followingCache = new Set(); // 내가 팔로우 중인 uid 모음
+
+    // 4) 로그인/로그아웃
+    loginBtn.onclick = async () => {
+      composeErr.textContent = "";
+      try{
+        const provider = new GoogleAuthProvider();
+        await signInWithPopup(auth, provider);
+      }catch(e){
+        composeErr.textContent = "로그인 실패: " + (e?.message || e);
+      }
+    };
+    logoutBtn.onclick = () => signOut(auth);
+
+    // 5) 유저 doc 보장/동기화
+    async function ensureUserDoc(user){
+      const uref = doc(db,'users',user.uid);
+      const snap = await getDoc(uref);
+      const base = {
+        uid: user.uid,
+        displayName: user.displayName || (user.email?.split('@')[0]) || '사용자',
+        photoURL: user.photoURL || '',
+        followerCount: 0, followingCount: 0,
+        lastSeen: serverTimestamp()
+      };
+      if(!snap.exists()){
+        await setDoc(uref, base);
+      }else{
+        // 이름/사진 변경 반영 + 접속 추적
+        await updateDoc(uref, {
+          displayName: base.displayName,
+          photoURL: base.photoURL,
+          lastSeen: serverTimestamp()
+        }).catch(()=>{});
+      }
+      // 사이드바 표시
+      mePhoto.src = base.photoURL || 'https://avatars.githubusercontent.com/u/583231?v=4';
+      meName.textContent = base.displayName;
+      // 카운트 실시간 반영
+      onSnapshot(uref, s=>{
+        const d = s.data()||{};
+        meFollowers.textContent = d.followerCount||0;
+        meFollowing.textContent = d.followingCount||0;
+      });
+      // 내가 팔로잉 중인 목록 캐시
+      onSnapshot(collection(db,'users',user.uid,'following'), qs=>{
+        followingCache = new Set(qs.docs.map(d=>d.id));
+        if(currentFeedMode==='following') subscribeFeed(); // 즉시 갱신
+      });
+    }
+
+    // 6) Auth 변경
+    onAuthStateChanged(auth, async (user) => {
+      if(user){
+        loginBtn.classList.add('hidden');
+        logoutBtn.classList.remove('hidden');
+        composer.classList.remove('hidden');
+        anonHint.classList.add('hidden');
+        userPhoto.classList.remove('hidden');
+        userName.classList.remove('hidden');
+
+        if(!user.displayName){
+          await updateProfile(user, { displayName: user.email?.split('@')[0] || '사용자' }).catch(()=>{});
+        }
+        userPhoto.src = user.photoURL || 'https://avatars.githubusercontent.com/u/583231?v=4';
+        userName.textContent = user.displayName || '사용자';
+
+        await ensureUserDoc(user);
+        subscribeFeed();
+        loadSuggestions();
+      }else{
+        loginBtn.classList.remove('hidden');
+        logoutBtn.classList.add('hidden');
+        composer.classList.add('hidden');
+        anonHint.classList.remove('hidden');
+        userPhoto.classList.add('hidden');
+        userName.classList.add('hidden');
+
+        followingCache = new Set();
+        subscribeFeed(true);
+        suggestList.innerHTML = "";
+        mePhoto.src = 'https://avatars.githubusercontent.com/u/583231?v=4';
+        meName.textContent = '게스트';
+        meFollowers.textContent = '0';
+        meFollowing.textContent = '0';
+      }
+    });
+
+    // 7) 글 게시
+    publishBtn.onclick = async () => {
+      composeErr.textContent = ""; composeHint.textContent = "";
+      const user = auth.currentUser;
+      if(!user){ composeErr.textContent = "로그인이 필요합니다."; return; }
+
+      const text = postText.value.trim();
+      const file = postImage.files[0];
+
+      if(!text && !file){
+        composeErr.textContent = "텍스트 또는 이미지를 입력해주세요.";
+        return;
+      }
+      publishBtn.disabled = true; publishBtn.textContent = "업로드 중…";
+
+      try{
+        // 이미지 업로드
+        let imageURL = null;
+        if(file){
+          const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+          const path = `images/${user.uid}/${Date.now()}.${ext}`;
+          const sref = ref(storage, path);
+          await uploadBytes(sref, file);
+          imageURL = await getDownloadURL(sref);
+        }
+        // 작성자 정보 최신화
+        await ensureUserDoc(user);
+
+        await addDoc(collection(db, 'posts'), {
+          uid: user.uid,
+          authorName: user.displayName || '사용자',
+          authorPhoto: user.photoURL || null,
+          text,
+          imageURL,
+          likeCount: 0,
+          commentCount: 0,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+
+        postText.value = "";
+        postImage.value = "";
+        composeHint.textContent = "게시되었습니다!";
+      }catch(e){
+        composeErr.textContent = "게시 실패: " + (e?.message || e);
+      }finally{
+        publishBtn.disabled = false; publishBtn.textContent = "게시";
+      }
+    };
+
+    // 8) 피드 (전체/팔로잉)
+    tabAll.onclick = () => { currentFeedMode='all'; tabAll.classList.add('active'); tabFollowing.classList.remove('active'); subscribeFeed(); };
+    tabFollowing.onclick = () => { currentFeedMode='following'; tabFollowing.classList.add('active'); tabAll.classList.remove('active'); subscribeFeed(); };
+
+    function subscribeFeed(readOnly=false){
+      if(unsubscribeFeed){ unsubscribeFeed(); unsubscribeFeed = null; }
+      const baseQ = query(collection(db,'posts'), orderBy('createdAt','desc'), limit(100));
+      unsubscribeFeed = onSnapshot(baseQ, async (snap)=>{
+        feed.innerHTML = "";
+        const me = auth.currentUser;
+        for(const docSnap of snap.docs){
+          const data = docSnap.data();
+          const id = docSnap.id;
+          if(currentFeedMode==='following' && me){
+            if(data.uid !== me.uid && !followingCache.has(data.uid)) continue;
+          }
+          feed.appendChild(renderPost(id, data));
+        }
+        if(feed.children.length===0){
+          const empty = document.createElement('div');
+          empty.className='chip';
+          empty.textContent = currentFeedMode==='following' ? '팔로우한 사용자의 게시글이 아직 없어요.' : '게시글이 없습니다.';
+          feed.appendChild(empty);
+        }
+      }, (err)=>{ console.error(err); });
+    }
+
+    // 9) 좋아요/댓글 (기존)
+    async function toggleLike(postId){
+      const user = auth.currentUser;
+      if(!user){ alert("로그인이 필요합니다."); return; }
+      const postRef = doc(db,'posts',postId);
+      const likeRef = doc(db,'posts',postId,'likes',user.uid);
+      await runTransaction(db, async (tx)=>{
+        const likeDoc = await tx.get(likeRef);
+        const postDoc = await tx.get(postRef);
+        if(!postDoc.exists()) throw new Error("게시물이 존재하지 않습니다.");
+        let likeCount = postDoc.data().likeCount || 0;
+        if(likeDoc.exists()){
+          tx.delete(likeRef);
+          likeCount = Math.max(0, likeCount - 1);
+        }else{
+          tx.set(likeRef, { uid:user.uid, at: serverTimestamp() });
+          likeCount = likeCount + 1;
+        }
+        tx.update(postRef, { likeCount, updatedAt: serverTimestamp() });
+      });
+    }
+
+    async function addComment(postId, input){
+      const user = auth.currentUser;
+      if(!user){ alert("로그인이 필요합니다."); return; }
+      const text = input.value.trim();
+      if(!text) return;
+      const postRef = doc(db,'posts',postId);
+      const commentsCol = collection(db,'posts',postId,'comments');
+      await runTransaction(db, async (tx)=>{
+        await addDoc(commentsCol, {
+          uid: user.uid,
+          authorName: user.displayName || '사용자',
+          authorPhoto: user.photoURL || null,
+          text, createdAt: serverTimestamp()
+        });
+        const postDoc = await tx.get(postRef);
+        if(postDoc.exists()){
+          const count = (postDoc.data().commentCount || 0) + 1;
+          tx.update(postRef, { commentCount: count, updatedAt: serverTimestamp() });
+        }
+      });
+      input.value = "";
+    }
+
+    function listenComments(postId, wrap){
+      const commentsCol = collection(db,'posts',postId,'comments');
+      const qy = query(commentsCol, orderBy('createdAt','asc'), limit(50));
+      const ul = document.createElement('div');
+      wrap.appendChild(ul);
+      const unsub = onSnapshot(qy, (snap)=>{
+        ul.innerHTML = "";
+        snap.forEach(c=>{
+          const d = c.data();
+          const row = document.createElement('div');
+          row.className = 'comment';
+          row.innerHTML = `
+            <img class="avatar" src="${escapeHtml(d.authorPhoto||'')}" onerror="this.src='https://avatars.githubusercontent.com/u/583231?v=4'">
+            <div>
+              <div class="meta"><b>${escapeHtml(d.authorName||'사용자')}</b></div>
+              <div>${escapeHtml(d.text||'')}</div>
+            </div>`;
+          ul.appendChild(row);
+        });
+      });
+      return unsub;
+    }
+
+    // 10) 팔로우/언팔로우
+    async function toggleFollow(targetUid, targetName, targetPhoto){
+      const me = auth.currentUser;
+      if(!me){ alert('로그인이 필요합니다.'); return; }
+      if(me.uid === targetUid) return; // 자기 자신 금지
+
+      const meRef = doc(db,'users',me.uid);
+      const targetRef = doc(db,'users',targetUid);
+      const followingRef = doc(db,'users',me.uid,'following',targetUid);
+      const followerRef  = doc(db,'users',targetUid,'followers',me.uid);
+
+      await runTransaction(db, async (tx)=>{
+        const fDoc = await tx.get(followingRef);
+        const meDoc = await tx.get(meRef);
+        const tgDoc = await tx.get(targetRef);
+
+        if(!tgDoc.exists()){
+          // 상대 유저 문서가 없으면 최소 정보로 생성
+          tx.set(targetRef, {
+            uid: targetUid,
+            displayName: targetName||'사용자',
+            photoURL: targetPhoto||'',
+            followerCount: 0, followingCount: 0,
+            lastSeen: serverTimestamp()
+          }, {merge:true});
+        }
+        if(!meDoc.exists()){
+          tx.set(meRef, {
+            uid: me.uid,
+            displayName: me.displayName || (me.email?.split('@')[0]) || '사용자',
+            photoURL: me.photoURL || '',
+            followerCount: 0, followingCount: 0,
+            lastSeen: serverTimestamp()
+          }, {merge:true});
+        }
+
+        if(fDoc.exists()){
+          // 언팔
+          tx.delete(followingRef);
+          tx.delete(followerRef);
+          const meCnt = (meDoc.data()?.followingCount||0) - 1;
+          const tgCnt = (tgDoc.data()?.followerCount||0) - 1;
+          tx.update(meRef, { followingCount: Math.max(0, meCnt) });
+          tx.update(targetRef, { followerCount: Math.max(0, tgCnt) });
+        }else{
+          // 팔로우
+          tx.set(followingRef, { uid: targetUid, at: serverTimestamp(), name: targetName||'사용자', photo: targetPhoto||'' });
+          tx.set(followerRef,  { uid: me.uid, at: serverTimestamp(), name: me.displayName||'사용자', photo: me.photoURL||'' });
+          const meCnt = (meDoc.data()?.followingCount||0) + 1;
+          const tgCnt = (tgDoc.data()?.followerCount||0) + 1;
+          tx.update(meRef, { followingCount: meCnt });
+          tx.update(targetRef, { followerCount: tgCnt });
+        }
+      });
+    }
+
+    async function isFollowing(targetUid){
+      const me = auth.currentUser;
+      if(!me) return false;
+      if(followingCache.size) return followingCache.has(targetUid);
+      // 캐시가 아직 없는 극초기 상황용 (최소 호출)
+      const refDoc = doc(db,'users',me.uid,'following',targetUid);
+      const s = await getDoc(refDoc);
+      return s.exists();
+    }
+
+    // 11) 유저 추천 로드 (최근 접속 기준)
+    async function loadSuggestions(){
+      const me = auth.currentUser;
+      if(!me){ suggestList.innerHTML = ""; return; }
+      const qy = query(collection(db,'users'), orderBy('lastSeen','desc'), limit(20));
+      const qs = await getDocs(qy);
+      suggestList.innerHTML = "";
+      qs.forEach(s=>{
+        const u = s.data();
+        if(u.uid === me.uid) return;
+        const row = document.createElement('div');
+        row.className = 'userrow';
+        row.innerHTML = `
+          <img class="avatar" src="${escapeHtml(u.photoURL||'')}" onerror="this.src='https://avatars.githubusercontent.com/u/583231?v=4'">
+          <div class="grow">
+            <div class="name">${escapeHtml(u.displayName||'사용자')}</div>
+            <div class="chip">팔로워 ${u.followerCount||0} · 팔로잉 ${u.followingCount||0}</div>
+          </div>
+          <button class="secondary" data-follow>팔로우</button>
+        `;
+        const btn = row.querySelector('[data-follow]');
+        // 현재 팔로잉 상태 반영
+        (async ()=>{
+          const on = await isFollowing(u.uid);
+          if(on){ btn.textContent = '언팔로우'; btn.classList.add('like'); }
+        })();
+
+        btn.addEventListener('click', async ()=>{
+          await toggleFollow(u.uid, u.displayName, u.photoURL);
+          const nowOn = await isFollowing(u.uid);
+          if(nowOn){ btn.textContent='언팔로우'; btn.classList.add('like'); }
+          else { btn.textContent='팔로우'; btn.classList.remove('like'); }
+        });
+
+        suggestList.appendChild(row);
+      });
+    }
+
+    editProfileBtn.onclick = async ()=>{
+      const me = auth.currentUser;
+      if(!me){ alert('로그인이 필요합니다.'); return; }
+      const name = prompt('표시 이름을 입력하세요', me.displayName||'');
+      if(name===null) return;
+      try{
+        await updateProfile(me, { displayName: name });
+        await updateDoc(doc(db,'users',me.uid), { displayName: name, lastSeen: serverTimestamp() });
+        meName.textContent = name;
+        userName.textContent = name;
+      }catch(e){ alert('프로필 업데이트 실패: ' + (e?.message||e)); }
+    };
+
+    // 12) 게시물 카드 + 팔로우 버튼 포함
+    function renderPost(id, d){
+      const me = auth.currentUser;
+      const el = document.createElement('article');
+      el.className = 'card post';
+      const created = d.createdAt?.toDate?.() || new Date();
+      const time = timeAgo(created);
+
+      const selfPost = me?.uid === d.uid;
+      el.innerHTML = `
+        <div class="head">
+          <img class="avatar" src="${escapeHtml(d.authorPhoto||'')}" onerror="this.src='https://avatars.githubusercontent.com/u/583231?v=4'">
+          <div>
+            <div class="name">${escapeHtml(d.authorName||'사용자')}</div>
+            <div class="time">${time}</div>
+          </div>
+          <span class="grow"></span>
+          ${selfPost ? `<button class="secondary" data-del>삭제</button>` : `<button class="ghost" data-follow>팔로우</button>`}
+        </div>
+        <div class="content">${escapeHtml(d.text||'')}</div>
+        ${d.imageURL ? `<div class="imgwrap"><img loading="lazy" src="${escapeHtml(d.imageURL)}" alt="post image"/></div>` : ``}
+        <div class="actions">
+          <button class="secondary like" data-like>❤️ 좋아요 <span data-likecount>${d.likeCount||0}</span></button>
+          <span class="chip">💬 <span data-ccount>${d.commentCount||0}</span> 댓글</span>
+          <button class="secondary" data-togglec>댓글 보기</button>
+        </div>
+        <div class="comment-area hidden">
+          <div class="row">
+            <input type="text" placeholder="댓글을 입력하세요" />
+            <button class="secondary" data-addc>등록</button>
+          </div>
+          <div data-clist></div>
+        </div>
+      `;
+
+      // 팔로우 버튼 상태/동작
+      const followBtn = el.querySelector('[data-follow]');
+      if(followBtn){
+        (async ()=>{
+          const on = await isFollowing(d.uid);
+          if(on){ followBtn.textContent = '언팔로우'; followBtn.classList.add('like'); }
+        })();
+        followBtn.addEventListener('click', async ()=>{
+          await toggleFollow(d.uid, d.authorName, d.authorPhoto);
+          const on = await isFollowing(d.uid);
+          if(on){ followBtn.textContent='언팔로우'; followBtn.classList.add('like'); }
+          else { followBtn.textContent='팔로우'; followBtn.classList.remove('like'); }
+        });
+      }
+
+      // 좋아요
+      el.querySelector('[data-like]')?.addEventListener('click', async ()=>{
+        try{
+          await toggleLike(id);
+        }catch(e){ alert("좋아요 실패: " + (e?.message||e)); }
+      });
+
+      // 댓글 토글
+      const area = el.querySelector('.comment-area');
+      const listWrap = el.querySelector('[data-clist]');
+      let unsub = null;
+      el.querySelector('[data-togglec]')?.addEventListener('click', ()=>{
+        area.classList.toggle('hidden');
+        if(!area.classList.contains('hidden') && !unsub){
+          unsub = listenComments(id, listWrap);
+        }else if(area.classList.contains('hidden') && unsub){
+          unsub(); unsub = null; listWrap.innerHTML = "";
+        }
+      });
+
+      // 댓글 등록
+      el.querySelector('[data-addc]')?.addEventListener('click', async ()=>{
+        const input = el.querySelector('.comment-area input');
+        try{ await addComment(id, input); }
+        catch(e){ alert("댓글 실패: " + (e?.message||e)); }
+      });
+
+      // 삭제(작성자만)
+      el.querySelector('[data-del]')?.addEventListener('click', async ()=>{
+        if(!confirm("이 게시물을 삭제할까요?")) return;
+        try{ await deleteDoc(doc(db,'posts',id)); }
+        catch(e){ alert("삭제 실패: " + (e?.message||e)); }
+      });
+
+      return el;
+    }
+
+    // 13) 유틸
+    function escapeHtml(s=''){
+      return String(s)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'","&#039;");
+    }
+    function timeAgo(date){
+      const sec = Math.floor((Date.now() - date.getTime())/1000);
+      if(sec < 60) return `${sec}초 전`;
+      const m = Math.floor(sec/60); if(m<60) return `${m}분 전`;
+      const h = Math.floor(m/60); if(h<24) return `${h}시간 전`;
+      const d = Math.floor(h/24); if(d<7) return `${d}일 전`;
+      return date.toLocaleString();
+    }
+  </script>
+</body>
+</html>
